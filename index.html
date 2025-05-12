@@ -1,0 +1,550 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whimsical Interactive Garden</title>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.8.0/lib/p5.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #f8f4e9;
+        }
+        #canvas-container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+    </style>
+
+<base target="_self">
+
+
+    </head><body><div id="canvas-container"></div>
+
+    <script>
+        const garden = (p) => {
+            // Color palette
+            const palette = {
+                sky: p.color(232, 240, 253),
+                grass: p.color(196, 223, 170),
+                sun: p.color(255, 242, 153),
+                sunRay: p.color(255, 242, 153, 100),
+                carrot: p.color(247, 148, 29),
+                carrotTop: p.color(123, 189, 65),
+                strawberry: p.color(235, 64, 52),
+                strawberryLeaf: p.color(123, 189, 65),
+                sunflowerCenter: p.color(139, 69, 19),
+                sunflowerPetals: p.color(255, 215, 0),
+                rabbit: p.color(255, 250, 240),
+                outline: p.color(50, 50, 50, 150),
+                soil: p.color(139, 87, 42)
+            };
+
+            // System variables
+            let plants = [];
+            let sunbeams = [];
+            let particles = [];
+            let rabbit = {
+                x: 0,
+                y: 0,
+                size: 80,
+                earAngle: 0,
+                peekProgress: 0,
+                isPeeking: false,
+                targetX: 0,
+                targetY: 0
+            };
+            let wind = 0;
+            let lastClickTime = 0;
+            let lastRabbitMove = 0;
+            let canvas;
+
+            p.setup = () => {
+                canvas = p.createCanvas(p.min(p.windowWidth, 1200), p.windowHeight * 0.8);
+                canvas.parent('canvas-container');
+                p.colorMode(p.RGB, 255);
+                p.angleMode(p.DEGREES);
+                
+                // Initialize sunbeams
+                for (let i = 0; i < 8; i++) {
+                    sunbeams.push({
+                        angle: i * 45,
+                        length: p.random(100, 150),
+                        pulseSpeed: p.random(0.02, 0.05),
+                        pulsePhase: p.random(360),
+                        width: p.random(15, 25)
+                    });
+                }
+                
+                // Create initial plants
+                for (let i = 0; i < 5; i++) {
+                    addPlant(p.random(p.width * 0.2, p.width * 0.8), p.random(p.height * 0.6, p.height * 0.9), p.floor(p.random(3)));
+                }
+                
+                // Set initial rabbit position
+                rabbit.x = p.width * 0.2;
+                rabbit.y = p.height * 0.7;
+            };
+
+            p.draw = () => {
+                // Update wind with noise
+                wind = p.map(p.noise(p.frameCount * 0.01), 0, 1, -3, 3);
+                
+                // Draw sky background
+                drawSky();
+                
+                // Draw sun with animated rays
+                drawSun();
+                
+                // Draw ground
+                drawGround();
+                
+                // Update and draw plants
+                updatePlants();
+                
+                // Update and draw rabbit
+                updateRabbit();
+                drawRabbit();
+                
+                // Update and draw particles
+                updateParticles();
+                
+                // Draw interactive hint if no recent interaction
+                if (p.millis() - lastClickTime > 5000 && p.frameCount % 120 < 60) {
+                    drawPlantHint();
+                }
+            };
+
+            function drawSky() {
+                // Gradient sky
+                for (let y = 0; y < p.height * 0.6; y++) {
+                    let inter = p.map(y, 0, p.height * 0.6, 0, 1);
+                    let c = p.lerpColor(p.color(232, 240, 253), p.color(174, 214, 241), inter);
+                    p.stroke(c);
+                    p.line(0, y, p.width, y);
+                }
+            }
+
+            function drawSun() {
+                // Sun position
+                let sunX = p.width * 0.8;
+                let sunY = p.height * 0.2;
+                
+                // Draw sun rays
+                for (let beam of sunbeams) {
+                    p.push();
+                    p.translate(sunX, sunY);
+                    p.rotate(beam.angle);
+                    
+                    let pulse = p.sin(p.frameCount * beam.pulseSpeed + beam.pulsePhase) * 0.2 + 0.8;
+                    let currentLength = beam.length * pulse;
+                    
+                    p.noStroke();
+                    p.fill(palette.sunRay);
+                    p.beginShape();
+                    p.vertex(0, -beam.width * 0.5);
+                    p.vertex(currentLength, -beam.width * 0.2);
+                    p.vertex(currentLength, beam.width * 0.2);
+                    p.vertex(0, beam.width * 0.5);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                }
+                
+                // Draw sun core
+                p.fill(palette.sun);
+                p.noStroke();
+                p.ellipse(sunX, sunY, 100, 100);
+                
+                // Sun outline
+                p.stroke(palette.outline);
+                p.strokeWeight(1.5);
+                p.noFill();
+                p.ellipse(sunX, sunY, 100, 100);
+            }
+
+            function drawGround() {
+                // Ground base
+                p.noStroke();
+                p.fill(palette.grass);
+                p.rect(0, p.height * 0.6, p.width, p.height * 0.4);
+                
+                // Soil texture
+                p.fill(palette.soil);
+                p.noStroke();
+                for (let i = 0; i < 200; i++) {
+                    let x = p.random(p.width);
+                    let y = p.random(p.height * 0.6, p.height);
+                    let s = p.random(1, 3);
+                    p.ellipse(x, y, s, s);
+                }
+            }
+
+            function addPlant(x, y, type) {
+                let growthStage = 0;
+                let maxGrowth = p.random(0.8, 1.2);
+                let swayPhase = p.random(360);
+                let swayAmount = p.random(2, 5);
+                let size = p.random(0.8, 1.2);
+                
+                plants.push({
+                    x: x,
+                    y: y,
+                    type: type,
+                    growthStage: growthStage,
+                    maxGrowth: maxGrowth,
+                    swayPhase: swayPhase,
+                    swayAmount: swayAmount,
+                    size: size,
+                    age: 0
+                });
+            }
+
+            function updatePlants() {
+                for (let plant of plants) {
+                    // Grow over time
+                    if (plant.growthStage < plant.maxGrowth) {
+                        plant.growthStage = p.min(plant.growthStage + 0.002, plant.maxGrowth);
+                    }
+                    
+                    // Age the plant
+                    plant.age += 0.1;
+                    
+                    // Draw the plant
+                    drawPlant(plant);
+                }
+            }
+
+            function drawPlant(plant) {
+                p.push();
+                p.translate(plant.x, plant.y);
+                
+                // Sway with wind
+                let sway = p.sin(p.frameCount * 0.05 + plant.swayPhase) * plant.swayAmount * plant.growthStage;
+                p.rotate(sway);
+                
+                // Draw based on plant type
+                switch (plant.type) {
+                    case 0: // Carrot
+                        drawCarrot(plant);
+                        break;
+                    case 1: // Strawberry
+                        drawStrawberry(plant);
+                        break;
+                    case 2: // Sunflower
+                        drawSunflower(plant);
+                        break;
+                }
+                
+                p.pop();
+            }
+
+            function drawCarrot(plant) {
+                let h = 80 * plant.growthStage * plant.size;
+                let w = 30 * plant.size;
+                
+                // Carrot body
+                p.fill(palette.carrot);
+                p.noStroke();
+                p.beginShape();
+                p.vertex(0, 0);
+                p.bezierVertex(w * 0.3, -h * 0.2, w * 0.2, -h * 0.8, 0, -h);
+                p.bezierVertex(-w * 0.2, -h * 0.8, -w * 0.3, -h * 0.2, 0, 0);
+                p.endShape(p.CLOSE);
+                
+                // Carrot top leaves
+                p.fill(palette.carrotTop);
+                for (let i = 0; i < 3; i++) {
+                    p.push();
+                    p.translate(0, -h);
+                    p.rotate(i * 120 + p.sin(plant.age * 0.5 + i) * 10);
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.bezierVertex(5, -h * 0.3, 10, -h * 0.4, 0, -h * 0.5);
+                    p.bezierVertex(-10, -h * 0.4, -5, -h * 0.3, 0, 0);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                }
+                
+                // Outline
+                p.stroke(palette.outline);
+                p.strokeWeight(1);
+                p.noFill();
+                p.beginShape();
+                p.vertex(0, 0);
+                p.bezierVertex(w * 0.3, -h * 0.2, w * 0.2, -h * 0.8, 0, -h);
+                p.bezierVertex(-w * 0.2, -h * 0.8, -w * 0.3, -h * 0.2, 0, 0);
+                p.endShape(p.CLOSE);
+            }
+
+            function drawStrawberry(plant) {
+                let h = 60 * plant.growthStage * plant.size;
+                let w = 40 * plant.size;
+                
+                // Leaves
+                p.fill(palette.strawberryLeaf);
+                p.noStroke();
+                for (let i = 0; i < 3; i++) {
+                    p.push();
+                    p.rotate(i * 120 + p.sin(plant.age * 0.3 + i) * 5);
+                    p.beginShape();
+                    p.vertex(0, -h * 0.1);
+                    p.bezierVertex(w * 0.3, -h * 0.2, w * 0.4, -h * 0.4, 0, -h * 0.6);
+                    p.bezierVertex(-w * 0.4, -h * 0.4, -w * 0.3, -h * 0.2, 0, -h * 0.1);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                }
+                
+                // Strawberry body
+                p.fill(palette.strawberry);
+                p.beginShape();
+                p.vertex(0, 0);
+                p.bezierVertex(w * 0.3, -h * 0.2, w * 0.2, -h * 0.7, 0, -h * 0.8);
+                p.bezierVertex(-w * 0.2, -h * 0.7, -w * 0.3, -h * 0.2, 0, 0);
+                p.endShape(p.CLOSE);
+                
+                // Seeds
+                p.fill(palette.strawberryLeaf);
+                for (let i = 0; i < 10; i++) {
+                    let a = p.random(360);
+                    let r = p.random(w * 0.1, w * 0.3);
+                    let y = p.random(-h * 0.7, -h * 0.2);
+                    p.ellipse(p.cos(a) * r, y, 2, 2);
+                }
+                
+                // Outline
+                p.stroke(palette.outline);
+                p.strokeWeight(1);
+                p.noFill();
+                p.beginShape();
+                p.vertex(0, 0);
+                p.bezierVertex(w * 0.3, -h * 0.2, w * 0.2, -h * 0.7, 0, -h * 0.8);
+                p.bezierVertex(-w * 0.2, -h * 0.7, -w * 0.3, -h * 0.2, 0, 0);
+                p.endShape(p.CLOSE);
+            }
+
+            function drawSunflower(plant) {
+                let h = 120 * plant.growthStage * plant.size;
+                let w = 30 * plant.size;
+                let flowerSize = 50 * plant.size;
+                
+                // Stem
+                p.stroke(palette.carrotTop);
+                p.strokeWeight(5);
+                p.line(0, 0, 0, -h);
+                
+                // Leaves
+                p.fill(palette.carrotTop);
+                p.noStroke();
+                for (let i = 0; i < 2; i++) {
+                    let pos = i * 0.6 + 0.2;
+                    p.push();
+                    p.translate(0, -h * pos);
+                    p.rotate(i ? 20 : -20);
+                    p.beginShape();
+                    p.vertex(0, 0);
+                    p.bezierVertex(w, -h * 0.1, w * 1.5, -h * 0.05, w * 0.8, h * 0.1);
+                    p.bezierVertex(w * 0.5, h * 0.15, 0, h * 0.1, 0, 0);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                }
+                
+                // Flower center
+                p.push();
+                p.translate(0, -h);
+                p.fill(palette.sunflowerCenter);
+                p.noStroke();
+                p.ellipse(0, 0, flowerSize * 0.6, flowerSize * 0.6);
+                
+                // Petals
+                p.fill(palette.sunflowerPetals);
+                for (let i = 0; i < 12; i++) {
+                    p.push();
+                    p.rotate(i * 30 + p.sin(plant.age * 0.2 + i) * 5);
+                    p.beginShape();
+                    p.vertex(flowerSize * 0.3, 0);
+                    p.bezierVertex(flowerSize * 0.5, -flowerSize * 0.2, flowerSize * 0.8, -flowerSize * 0.1, flowerSize * 0.6, 0);
+                    p.bezierVertex(flowerSize * 0.8, flowerSize * 0.1, flowerSize * 0.5, flowerSize * 0.2, flowerSize * 0.3, 0);
+                    p.endShape(p.CLOSE);
+                    p.pop();
+                }
+                
+                // Center texture
+                p.fill(palette.outline);
+                for (let i = 0; i < 20; i++) {
+                    let a = p.random(360);
+                    let r = p.random(flowerSize * 0.3);
+                    p.ellipse(p.cos(a) * r * 0.5, p.sin(a) * r * 0.5, 2, 2);
+                }
+                
+                // Outline
+                p.stroke(palette.outline);
+                p.strokeWeight(1);
+                p.noFill();
+                p.ellipse(0, 0, flowerSize * 0.6, flowerSize * 0.6);
+                p.pop();
+            }
+
+            function updateRabbit() {
+                // Ears animation
+                rabbit.earAngle = p.sin(p.frameCount * 0.1) * 5;
+                
+                // Check if mouse is near rabbit
+                let mouseDist = p.dist(p.mouseX, p.mouseY, rabbit.x, rabbit.y);
+                let shouldPeek = mouseDist < 200 && p.mouseY > p.height * 0.6;
+                
+                // Update peek state
+                if (shouldPeek && !rabbit.isPeeking) {
+                    rabbit.isPeeking = true;
+                    rabbit.targetX = p.mouseX + p.random(-50, 50);
+                    rabbit.targetY = p.height * 0.7 + p.random(-20, 20);
+                } else if (!shouldPeek && rabbit.isPeeking) {
+                    rabbit.isPeeking = false;
+                }
+                
+                // Update peek progress
+                if (rabbit.isPeeking) {
+                    rabbit.peekProgress = p.min(rabbit.peekProgress + 0.05, 1);
+                } else {
+                    rabbit.peekProgress = p.max(rabbit.peekProgress - 0.02, 0);
+                }
+                
+                // Move rabbit smoothly
+                rabbit.x = p.lerp(rabbit.x, rabbit.targetX, 0.05);
+                rabbit.y = p.lerp(rabbit.y, rabbit.targetY, 0.05);
+                
+                // Occasionally choose new position
+                if (p.millis() - lastRabbitMove > 5000 && p.random() < 0.01) {
+                    rabbit.targetX = p.random(p.width * 0.1, p.width * 0.4);
+                    rabbit.targetY = p.height * 0.7 + p.random(-20, 20);
+                    lastRabbitMove = p.millis();
+                }
+            }
+
+            function drawRabbit() {
+                if (rabbit.peekProgress <= 0) return;
+                
+                p.push();
+                p.translate(rabbit.x, rabbit.y);
+                p.scale(rabbit.peekProgress);
+                
+                // Body
+                p.fill(palette.rabbit);
+                p.noStroke();
+                p.ellipse(0, 0, rabbit.size * 0.8, rabbit.size);
+                
+                // Head
+                p.ellipse(0, -rabbit.size * 0.4, rabbit.size * 0.6, rabbit.size * 0.6);
+                
+                // Ears
+                p.push();
+                p.translate(0, -rabbit.size * 0.6);
+                p.rotate(rabbit.earAngle);
+                p.ellipse(-rabbit.size * 0.2, -rabbit.size * 0.3, rabbit.size * 0.2, rabbit.size * 0.5);
+                p.rotate(-rabbit.earAngle * 2);
+                p.ellipse(rabbit.size * 0.2, -rabbit.size * 0.3, rabbit.size * 0.2, rabbit.size * 0.5);
+                p.pop();
+                
+                // Face
+                p.fill(palette.outline);
+                p.ellipse(-rabbit.size * 0.1, -rabbit.size * 0.45, 5, 8);
+                p.ellipse(rabbit.size * 0.1, -rabbit.size * 0.45, 5, 8);
+                p.noFill();
+                p.arc(0, -rabbit.size * 0.35, 20, 10, 20, 160);
+                
+                // Outline
+                p.stroke(palette.outline);
+                p.strokeWeight(1.5);
+                p.noFill();
+                p.ellipse(0, 0, rabbit.size * 0.8, rabbit.size);
+                p.ellipse(0, -rabbit.size * 0.4, rabbit.size * 0.6, rabbit.size * 0.6);
+                
+                p.push();
+                p.translate(0, -rabbit.size * 0.6);
+                p.rotate(rabbit.earAngle);
+                p.ellipse(-rabbit.size * 0.2, -rabbit.size * 0.3, rabbit.size * 0.2, rabbit.size * 0.5);
+                p.rotate(-rabbit.earAngle * 2);
+                p.ellipse(rabbit.size * 0.2, -rabbit.size * 0.3, rabbit.size * 0.2, rabbit.size * 0.5);
+                p.pop();
+                
+                p.pop();
+            }
+
+            function updateParticles() {
+                // Add occasional pollen particles
+                if (p.random() < 0.1) {
+                    particles.push({
+                        x: p.random(p.width),
+                        y: p.random(p.height * 0.4),
+                        size: p.random(2, 4),
+                        speed: p.random(0.5, 1.5),
+                        angle: p.random(360),
+                        life: p.random(100, 200),
+                        color: p.color(255, 255, 200, 150)
+                    });
+                }
+                
+                // Update and remove dead particles
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    let part = particles[i];
+                    part.x += p.cos(part.angle) * part.speed;
+                    part.y += p.sin(part.angle) * part.speed + wind * 0.5;
+                    part.life--;
+                    part.angle += p.random(-1, 1);
+                    
+                    if (part.life <= 0 || part.y > p.height) {
+                        particles.splice(i, 1);
+                    } else {
+                        p.fill(part.color);
+                        p.noStroke();
+                        p.ellipse(part.x, part.y, part.size, part.size);
+                    }
+                }
+            }
+
+            function drawPlantHint() {
+                let pulse = p.sin(p.frameCount * 0.05) * 0.3 + 0.7;
+                p.fill(255, 255, 255, 150 * pulse);
+                p.noStroke();
+                p.textSize(16);
+                p.textAlign(p.CENTER);
+                p.text("Click to plant a seed", p.width * 0.5, p.height * 0.2);
+            }
+
+            p.mousePressed = () => {
+                // Only plant in the ground area
+                if (p.mouseY > p.height * 0.6 && plants.length < 30) {
+                    addPlant(p.mouseX, p.mouseY, p.floor(p.random(3)));
+                    lastClickTime = p.millis();
+                    
+                    // Create planting effect
+                    for (let i = 0; i < 10; i++) {
+                        particles.push({
+                            x: p.mouseX,
+                            y: p.mouseY,
+                            size: p.random(2, 5),
+                            speed: p.random(1, 3),
+                            angle: p.random(360),
+                            life: p.random(30, 60),
+                            color: p.color(139, 87, 42, 200)
+                        });
+                    }
+                }
+            };
+
+            p.windowResized = () => {
+                p.resizeCanvas(p.min(p.windowWidth, 1200), p.windowHeight * 0.8);
+            };
+        };
+
+        new p5(garden);
+    </script>
+
+              
+          
+                
+          
+              
+</body></html>
